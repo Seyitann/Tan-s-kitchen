@@ -1,0 +1,53 @@
+import { currentCustomer } from "@/lib/auth";
+import { countOrdersSince, createOrder, getOrder, listOrdersForCustomer, saveNotifications } from "@/lib/db";
+import { json, readJson } from "@/lib/http";
+import { notifyOrder } from "@/lib/notify";
+import { buildOrder, parseOrderRequest, publicOrder } from "@/lib/orders";
+
+export async function POST(request: Request) {
+  const customer = await currentCustomer();
+  if (!customer) return json({ error: "Please log in to place an order." }, 401);
+
+  const body = await readJson(request);
+  if (!body) return json({ error: "Invalid request." }, 400);
+
+  // At most five orders an hour per account. This counts saved orders, so it holds
+  // even when the site runs on many servers at once.
+  const lastHour = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  if ((await countOrdersSince(customer.id, lastHour)) >= 5) {
+    return json({ error: "You have placed several orders in the last hour. Please call us for more." }, 429);
+  }
+
+  const parsed = parseOrderRequest(body);
+  if (!parsed.ok) return json({ error: parsed.error }, 400);
+
+  const built = buildOrder(parsed.value, customer.id);
+  if (!built.ok) return json({ error: built.error }, 400);
+
+  const order = built.order;
+  await createOrder(order);
+
+  // The order is already saved. Messages going wrong never cancel it.
+  const notifications = await notifyOrder(order, customer);
+  await saveNotifications(order.id, notifications);
+
+  return json({ order: publicOrder({ ...order, notifications }) }, 201);
+}
+
+export async function GET(request: Request) {
+  const customer = await currentCustomer();
+  if (!customer) return json({ error: "Please log in." }, 401);
+
+  const id = new URL(request.url).searchParams.get("id");
+  if (id) {
+    const order = await getOrder(id);
+    // Customers can only open their own orders
+    if (!order || order.customerId !== customer.id) {
+      return json({ error: "Order not found." }, 404);
+    }
+    return json({ order: publicOrder(order) });
+  }
+
+  const orders = await listOrdersForCustomer(customer.id);
+  return json({ orders: orders.map(publicOrder) });
+}

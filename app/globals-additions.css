@@ -1,0 +1,23 @@
+
+/* ---------- Tan's Kitchen additions ----------
+   Paste this at the very end of app/globals.css.
+   If you pasted an earlier version of this block, delete that one first. */
+
+html {
+  scroll-behavior: smooth;
+}
+
+/* Turns off the automatic dark mode and sets the fonts */
+body {
+  background: #ffffff;
+  color: #292524;
+  font-family: var(--font-body), system-ui, sans-serif;
+}
+
+.font-heading {
+  font-family: var(--font-heading), Georgia, serif;
+}
+
+.font-script {
+  font-family: var(--font-script), cursive;
+}

@@ -1,0 +1,165 @@
+export type Tag = "popular" | "new" | "spicy" | "vegetarian" | "vegan" | "fish";
+
+export type MenuItem = {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  category: "Rice" | "Pasta" | "Soups" | "Grills" | "Desserts";
+  image: string;
+  ingredients: string[];
+  tags?: Tag[];
+};
+
+// Prices, ingredients and tags are samples. Edit them to match the real menu.
+export const menu: MenuItem[] = [
+  {
+    id: "jollof-chicken",
+    name: "Jollof Rice & Chicken",
+    description: "Smoky party jollof with grilled chicken and fried plantain.",
+    price: 4500,
+    category: "Rice",
+    image: "/images/Jollof-rice.jpg",
+    ingredients: ["rice", "tomato", "pepper", "onion", "chicken"],
+    tags: ["popular"],
+  },
+  {
+    id: "fried-rice",
+    name: "Fried Rice & Chicken",
+    description: "Veggie-loaded fried rice with a juicy chicken thigh.",
+    price: 4500,
+    category: "Rice",
+    image: "/images/fried-rice.jpg",
+    ingredients: ["rice", "carrot", "green peas", "sweetcorn", "chicken"],
+  },
+  {
+    id: "jollof-spaghetti-and-garnished chicken",
+    name: "Jollof Spaghetti & Garnished Chicken",
+    description: "A fusion of jollof and spaghetti, topped with garnished chicken.",
+    price: 5000,
+    category: "Pasta",
+    image: "/images/jollof-spaghetti-and-garnished chicken.png",
+    ingredients: ["spaghetti", "tomato", "garnish", "onion", "chicken"],
+  },
+   {
+    id: "peppered-macaroni",
+    name: "Peppered Macaroni",
+    description: "A spicy twist on classic macaroni, served with a side of grilled chicken.",
+    price: 5000,
+    category: "Pasta",
+    image: "/images/peppered-mac.jpg",
+    ingredients: ["macaroni", "tomato", "pepper", "onion"],
+  },
+  {
+    id: "nigerian-macaronii",
+    name: "Nigerian Macaroni",
+    description: "A flavorful twist on classic macaroni, served with a side of grilled chicken.",
+    price: 5000,
+    category: "Pasta",
+    image: "/images/nigerian-macaronii.png",
+    ingredients: ["macaroni", "tomato", "pepper", "onion"],
+  },
+  {
+    id: "Nigerian-fried-rice",
+    name: "Fried Rice & Chicken",
+    description: "Loacal Veggie-loaded fried rice with a juicy chicken thigh.",
+    price: 4500,
+    category: "Rice",
+    image: "/images/nigerian-fried-rice.png",
+    ingredients: ["rice", "carrot", "green peas", "sweetcorn", "chicken"],
+  },
+  {
+    id: "egusi-pounded-yam",
+    name: "Egusi & Pounded Yam",
+    description: "Rich melon seed soup with assorted meat and smooth pounded yam.",
+    price: 5500,
+    category: "Soups",
+    image: "/images/Pounded-yam.jpg",
+    ingredients: ["melon seed", "spinach", "palm oil", "assorted meat", "yam"],
+  },
+  {
+    id: "beef-suya",
+    name: "Beef Suya",
+    description: "Spicy grilled beef skewers with onions and yaji.",
+    price: 3000,
+    category: "Grills",
+    image: "/images/suya.jpg",
+    ingredients: ["beef", "yaji", "onion", "pepper"],
+    tags: ["spicy"],
+  },
+  {
+    id: "amala-ewedu-gbegiri",
+    name: "Amala, Ewedu & Gbegiri",
+    description: "Soft amala with ewedu, gbegiri and well-assorted ogufe meat.",
+    price: 5500,
+    category: "Soups",
+    image: "/images/amala.jpg",
+    ingredients: ["yam flour", "ewedu", "beans", "ogufe meat"],
+    tags: ["new"],
+  },
+  {
+    id: "white-rice-stew",
+    name: "White Rice & Stew",
+    description: "Steamed white rice with garnished stew and chicken.",
+    price: 4000,
+    category: "Rice",
+    image: "/images/white-rice.webp",
+    ingredients: ["rice", "tomato", "pepper", "onion", "chicken"],
+  },
+  {
+  id: "vegan-jollof",
+  name: "Vegan Jollof Rice",
+  description: "Smoky party jollof made without meat, served with fried plantain.",
+  price: 4000,
+  category: "Rice",
+  image: "/images/vegan-jollof.jpg",
+  ingredients: ["rice", "tomato", "pepper", "onion", "fried plantain"],
+  tags: ["vegan"],
+},
+{
+  id: "suya-jollof",
+  name: "Suya Jollof Rice",
+  description: "Party jollof topped with spicy grilled beef suya and onions.",
+  price: 5000,
+  category: "Rice",
+  image: "/images/suya-jollof.jpg",
+  ingredients: ["rice", "tomato", "pepper", "beef suya", "onion"],
+  tags: ["spicy"],
+},
+{
+  id: "efo-riro",
+  name: "Efo Riro",
+  description: "Rich spinach stew with assorted meat, served with your choice of swallow.",
+  price: 5000,
+  category: "Soups",
+  image: "/images/efo-riro.jpeg",
+  ingredients: ["spinach", "palm oil", "pepper", "assorted meat", "locust beans"],
+},
+{
+  id: "puff-puff",
+  name: "Puff Puff",
+  description: "Soft, golden fried dough balls, lightly sweet.",
+  price: 1500,
+  category: "Desserts",
+  image: "/images/puff-puff.webp",
+  ingredients: ["flour", "sugar", "yeast", "nutmeg"],
+},
+{
+  id: "chin-chin",
+  name: "Chin Chin",
+  description: "Crunchy fried pastry bites, made fresh.",
+  price: 1500,
+  category: "Desserts",
+  image: "/images/chin-chin.webp",
+  ingredients: ["flour", "sugar", "butter", "nutmeg"],
+},
+{
+  id: "fruit-salad",
+  name: "Fruit Salad",
+  description: "Chilled mixed fruit cup.",
+  price: 2500,
+  category: "Desserts",
+  image: "/images/fruit-salad.jpg",
+  ingredients: ["pineapple", "watermelon", "apple", "grapes"],
+},
+];
