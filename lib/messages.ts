@@ -23,10 +23,15 @@ function where(order: Order) {
     : "Pickup";
 }
 
+// Tells the restaurant whether the money is already in
+function payNote(order: Order) {
+  return order.paymentStatus === "paid" ? "PAID ONLINE" : "PAY ON DELIVERY";
+}
+
 export function restaurantSms(order: Order, customer: Customer) {
   const note = order.notes ? ` Note: ${order.notes}` : "";
   return plain(
-    `New order ${order.id} from ${customer.name} (${customer.phone}). ${itemsLine(order)}. Total ${smsMoney(order.total)}. ${where(order)}.${note}`
+    `New order ${order.id} from ${customer.name} (${customer.phone}). ${itemsLine(order)}. Total ${smsMoney(order.total)} (${payNote(order)}). ${where(order)}.${note}`
   ).slice(0, 320);
 }
 
@@ -35,8 +40,12 @@ export function customerSms(order: Order, customer: Customer) {
     order.fulfilment === "delivery"
       ? "We will deliver it to you."
       : "It will be ready for pickup.";
+  const money =
+    order.paymentStatus === "paid"
+      ? "Payment received."
+      : "You pay when it arrives.";
   return plain(
-    `Hi ${firstName(customer)}, Tan's Kitchen received your order ${order.id}. Total ${smsMoney(order.total)}. ${next} Thank you!`
+    `Hi ${firstName(customer)}, Tan's Kitchen received your order ${order.id}. Total ${smsMoney(order.total)}. ${money} ${next} Thank you!`
   );
 }
 
@@ -49,7 +58,7 @@ export function restaurantWhatsAppData(order: Order, customer: Customer) {
     "3": customer.phone,
     "4": oneLine(itemsLine(order)),
     "5": waMoney(order.total),
-    "6": oneLine(where(order) + (order.notes ? `. Note: ${order.notes}` : "")),
+    "6": oneLine(`${where(order)}. ${payNote(order)}.${order.notes ? ` Note: ${order.notes}` : ""}`),
   };
 }
 

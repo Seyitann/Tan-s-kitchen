@@ -9,6 +9,7 @@ type Parsed =
       value: {
         items: { id: string; quantity: number }[];
         fulfilment: "delivery" | "pickup";
+        paymentMethod: "online" | "on_delivery";
         address: string;
         notes: string;
       };
@@ -42,6 +43,7 @@ export function parseOrderRequest(body: Record<string, unknown>): Parsed {
   }
 
   const fulfilment = body.fulfilment === "pickup" ? "pickup" : "delivery";
+  const paymentMethod = body.paymentMethod === "online" ? "online" : "on_delivery";
   const address = String(body.address ?? "").trim().replace(/\s+/g, " ");
   const notes = String(body.notes ?? "").trim().replace(/\s+/g, " ");
 
@@ -57,6 +59,7 @@ export function parseOrderRequest(body: Record<string, unknown>): Parsed {
     value: {
       items: [...quantities].map(([id, quantity]) => ({ id, quantity })),
       fulfilment,
+      paymentMethod,
       address: fulfilment === "delivery" ? address : "",
       notes,
     },
@@ -105,7 +108,12 @@ export function buildOrder(
       fulfilment: request.fulfilment,
       address: request.address,
       notes: request.notes,
-      status: "received",
+      // Online orders wait for the payment. The restaurant hears about them once it goes through.
+      status: request.paymentMethod === "online" ? "awaiting_payment" : "received",
+      paymentMethod: request.paymentMethod,
+      paymentStatus: "unpaid",
+      paymentReference: null,
+      paidAt: null,
       createdAt: new Date().toISOString(),
       notifications: [],
     },
@@ -114,8 +122,9 @@ export function buildOrder(
 
 // What the browser is allowed to see about an order
 export function publicOrder(order: Order) {
-  const { customerId: _customerId, notifications, ...rest } = order;
+  const { customerId: _customerId, paymentReference: _reference, notifications, ...rest } = order;
   void _customerId;
+  void _reference;
   return {
     ...rest,
     notifications: notifications.map(({ channel, to, status }) => ({

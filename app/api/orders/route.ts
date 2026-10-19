@@ -1,5 +1,7 @@
 import { currentCustomer } from "@/lib/auth";
 import { countOrdersSince, createOrder, getOrder, listOrdersForCustomer, saveNotifications } from "@/lib/db";
+import { settlePayment } from "@/lib/payments";
+import { paystackConfigured } from "@/lib/paystack";
 import { json, readJson } from "@/lib/http";
 import { notifyOrder } from "@/lib/notify";
 import { buildOrder, parseOrderRequest, publicOrder } from "@/lib/orders";
@@ -21,11 +23,24 @@ export async function POST(request: Request) {
   const parsed = parseOrderRequest(body);
   if (!parsed.ok) return json({ error: parsed.error }, 400);
 
+  const { paymentMethod } = parsed.value;
+  if (paymentMethod === "online" && !paystackConfigured()) {
+    return json({ error: "Online payment is not available yet. Please choose pay on delivery." }, 400);
+  }
+  if (paymentMethod === "on_delivery" && process.env.ALLOW_PAY_ON_DELIVERY === "false") {
+    return json({ error: "Please pay online to place an order." }, 400);
+  }
+
   const built = buildOrder(parsed.value, customer.id);
   if (!built.ok) return json({ error: built.error }, 400);
 
   const order = built.order;
   await createOrder(order);
+
+  // An online order is saved but not sent to the restaurant until the payment goes through
+  if (order.paymentMethod === "online") {
+    return json({ order: publicOrder(order) }, 201);
+  }
 
   // The order is already saved. Messages going wrong never cancel it.
   const notifications = await notifyOrder(order, customer);
@@ -40,10 +55,25 @@ export async function GET(request: Request) {
 
   const id = new URL(request.url).searchParams.get("id");
   if (id) {
-    const order = await getOrder(id);
+    let order = await getOrder(id);
     // Customers can only open their own orders
     if (!order || order.customerId !== customer.id) {
       return json({ error: "Order not found." }, 404);
+    }
+    // Looking at an unpaid online order checks with Paystack, in case the customer paid but
+    // never came back to the site and the webhook is late
+    if (
+      order.paymentMethod === "online" &&
+      order.paymentStatus !== "paid" &&
+      order.paymentReference &&
+      paystackConfigured()
+    ) {
+      try {
+        await settlePayment(order.paymentReference);
+        order = (await getOrder(id)) ?? order;
+      } catch (error) {
+        console.error("[payments] could not check the payment:", error);
+      }
     }
     return json({ order: publicOrder(order) });
   }

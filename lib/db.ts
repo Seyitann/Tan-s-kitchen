@@ -11,6 +11,7 @@ import path from "path";
 import { randomUUID } from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { OrderStatus } from "./orderStatus";
 
 export type Customer = {
   id: string;
@@ -44,7 +45,13 @@ export type Order = {
   fulfilment: "delivery" | "pickup";
   address: string;
   notes: string;
-  status: "received";
+  // Online orders start as "awaiting_payment" and pay-on-delivery orders as "received".
+  // The owner moves them along from there. The steps are in lib/orderStatus.ts.
+  status: OrderStatus;
+  paymentMethod: "online" | "on_delivery";
+  paymentStatus: "unpaid" | "paid" | "failed";
+  paymentReference: string | null;
+  paidAt: string | null;
   createdAt: string;
   notifications: Notification[];
 };
@@ -66,6 +73,18 @@ type Store = {
   getOrder(id: string): Promise<Order | null>;
   listOrdersForCustomer(customerId: string): Promise<Order[]>;
   countOrdersSince(customerId: string, sinceIso: string): Promise<number>;
+  // Remembers the latest payment attempt for an order
+  setPaymentReference(orderId: string, reference: string): Promise<void>;
+  // Marks an order paid. Returns true only for the call that actually changed it,
+  // so the "new paid order" messages go out exactly once.
+  markPaid(orderId: string, reference: string, paidAtIso: string): Promise<boolean>;
+  markPaymentFailed(orderId: string): Promise<void>;
+  // For the owner page
+  listRecentOrders(limit: number): Promise<Order[]>;
+  findCustomersByIds(ids: string[]): Promise<Customer[]>;
+  // Moves an order to a new status, but only if it is still in the status the owner was
+  // looking at. Returns false if someone else changed it first.
+  updateOrderStatus(orderId: string, from: OrderStatus, to: OrderStatus): Promise<boolean>;
 };
 
 // ---------- Local file ----------
@@ -75,9 +94,21 @@ const FILE = path.join(process.cwd(), ".data", "db.json");
 // Changes happen one after another, so two requests cannot overwrite each other
 let queue: Promise<unknown> = Promise.resolve();
 
+// Orders saved before online payment existed get sensible defaults
+function withPaymentDefaults(order: Order): Order {
+  return {
+    ...order,
+    paymentMethod: order.paymentMethod ?? "on_delivery",
+    paymentStatus: order.paymentStatus ?? "unpaid",
+    paymentReference: order.paymentReference ?? null,
+    paidAt: order.paidAt ?? null,
+  };
+}
+
 async function read(): Promise<Data> {
   try {
-    return JSON.parse(await fs.readFile(FILE, "utf8")) as Data;
+    const data = JSON.parse(await fs.readFile(FILE, "utf8")) as Data;
+    return { ...data, orders: data.orders.map(withPaymentDefaults) };
   } catch {
     return { customers: [], orders: [] };
   }
@@ -156,6 +187,53 @@ const fileStore: Store = {
       (o) => o.customerId === customerId && o.createdAt >= sinceIso
     ).length;
   },
+
+  setPaymentReference(orderId, reference) {
+    return update((data) => {
+      const order = data.orders.find((o) => o.id === orderId);
+      if (order && order.paymentStatus !== "paid") order.paymentReference = reference;
+    });
+  },
+
+  markPaid(orderId, reference, paidAtIso) {
+    return update((data) => {
+      const order = data.orders.find((o) => o.id === orderId);
+      if (!order || order.paymentStatus === "paid") return false;
+      order.paymentStatus = "paid";
+      order.paymentReference = reference;
+      order.paidAt = paidAtIso;
+      order.status = "received";
+      return true;
+    });
+  },
+
+  markPaymentFailed(orderId) {
+    return update((data) => {
+      const order = data.orders.find((o) => o.id === orderId);
+      if (order && order.paymentStatus === "unpaid") order.paymentStatus = "failed";
+    });
+  },
+
+  async listRecentOrders(limit) {
+    const data = await read();
+    return [...data.orders]
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, limit);
+  },
+
+  async findCustomersByIds(ids) {
+    const data = await read();
+    return data.customers.filter((c) => ids.includes(c.id));
+  },
+
+  updateOrderStatus(orderId, from, to) {
+    return update((data) => {
+      const order = data.orders.find((o) => o.id === orderId);
+      if (!order || order.status !== from) return false;
+      order.status = to;
+      return true;
+    });
+  },
 };
 
 // ---------- Supabase ----------
@@ -180,6 +258,10 @@ type OrderRow = {
   notes: string;
   status: Order["status"];
   notifications: Notification[] | null;
+  payment_method: Order["paymentMethod"];
+  payment_status: Order["paymentStatus"];
+  payment_reference: string | null;
+  paid_at: string | null;
   created_at: string;
 };
 
@@ -204,6 +286,10 @@ const toOrder = (row: OrderRow): Order => ({
   status: row.status,
   createdAt: row.created_at,
   notifications: row.notifications ?? [],
+  paymentMethod: row.payment_method,
+  paymentStatus: row.payment_status,
+  paymentReference: row.payment_reference,
+  paidAt: row.paid_at,
 });
 
 function supabaseConfig() {
@@ -279,6 +365,10 @@ const supabaseStore: Store = {
       notes: order.notes,
       status: order.status,
       notifications: order.notifications,
+      payment_method: order.paymentMethod,
+      payment_status: order.paymentStatus,
+      payment_reference: order.paymentReference,
+      paid_at: order.paidAt,
       created_at: order.createdAt,
     });
     check(error);
@@ -310,6 +400,74 @@ const supabaseStore: Store = {
       .order("created_at", { ascending: false });
     check(error);
     return ((data ?? []) as OrderRow[]).map(toOrder);
+  },
+
+  async setPaymentReference(orderId, reference) {
+    const { error } = await supabase()
+      .from("orders")
+      .update({ payment_reference: reference })
+      .eq("id", orderId)
+      .neq("payment_status", "paid");
+    check(error);
+  },
+
+  async markPaid(orderId, reference, paidAtIso) {
+    // The "not already paid" condition makes this safe when two requests arrive together:
+    // only one of them changes the row, and only that one gets true back.
+    const { data, error } = await supabase()
+      .from("orders")
+      .update({
+        payment_status: "paid",
+        payment_reference: reference,
+        paid_at: paidAtIso,
+        status: "received",
+      })
+      .eq("id", orderId)
+      .neq("payment_status", "paid")
+      .select("id");
+    check(error);
+    return (data ?? []).length > 0;
+  },
+
+  async markPaymentFailed(orderId) {
+    const { error } = await supabase()
+      .from("orders")
+      .update({ payment_status: "failed" })
+      .eq("id", orderId)
+      .eq("payment_status", "unpaid");
+    check(error);
+  },
+
+  async listRecentOrders(limit) {
+    const { data, error } = await supabase()
+      .from("orders")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    check(error);
+    return ((data ?? []) as OrderRow[]).map(toOrder);
+  },
+
+  async findCustomersByIds(ids) {
+    if (ids.length === 0) return [];
+    const { data, error } = await supabase()
+      .from("customers")
+      .select("*")
+      .in("id", ids);
+    check(error);
+    return ((data ?? []) as CustomerRow[]).map(toCustomer);
+  },
+
+  async updateOrderStatus(orderId, from, to) {
+    // The status condition means two people pressing buttons at once cannot both succeed
+    const { data, error } = await supabase()
+      .from("orders")
+      .update({ status: to })
+      .eq("id", orderId)
+      .eq("status", from)
+      .select("id");
+    check(error);
+    return (data ?? []).length > 0;
   },
 
   async countOrdersSince(customerId, sinceIso) {
@@ -350,3 +508,15 @@ export const listOrdersForCustomer: Store["listOrdersForCustomer"] = (customerId
   store().listOrdersForCustomer(customerId);
 export const countOrdersSince: Store["countOrdersSince"] = (customerId, sinceIso) =>
   store().countOrdersSince(customerId, sinceIso);
+export const setPaymentReference: Store["setPaymentReference"] = (orderId, reference) =>
+  store().setPaymentReference(orderId, reference);
+export const markPaid: Store["markPaid"] = (orderId, reference, paidAtIso) =>
+  store().markPaid(orderId, reference, paidAtIso);
+export const markPaymentFailed: Store["markPaymentFailed"] = (orderId) =>
+  store().markPaymentFailed(orderId);
+export const listRecentOrders: Store["listRecentOrders"] = (limit) =>
+  store().listRecentOrders(limit);
+export const findCustomersByIds: Store["findCustomersByIds"] = (ids) =>
+  store().findCustomersByIds(ids);
+export const updateOrderStatus: Store["updateOrderStatus"] = (orderId, from, to) =>
+  store().updateOrderStatus(orderId, from, to);

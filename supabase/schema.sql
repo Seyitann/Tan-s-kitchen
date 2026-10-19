@@ -21,8 +21,16 @@ create table if not exists orders (
   notes text not null default '',
   status text not null default 'received',
   notifications jsonb not null default '[]',
+  payment_method text not null default 'on_delivery'
+    check (payment_method in ('online', 'on_delivery')),
+  payment_status text not null default 'unpaid'
+    check (payment_status in ('unpaid', 'paid', 'failed')),
+  payment_reference text,
+  paid_at timestamptz,
   created_at timestamptz not null default now()
 );
+
+create index if not exists orders_payment_reference_idx on orders (payment_reference);
 
 create index if not exists orders_customer_created_idx
   on orders (customer_id, created_at desc);

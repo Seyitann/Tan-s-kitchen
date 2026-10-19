@@ -7,7 +7,7 @@ import type { Customer } from "./db";
 const COOKIE = "tk_session";
 const THIRTY_DAYS = 60 * 60 * 24 * 30;
 
-function secret() {
+export function secret() {
   const value = process.env.SESSION_SECRET;
   if (value && value.length >= 32) return new TextEncoder().encode(value);
   if (process.env.NODE_ENV === "production") {

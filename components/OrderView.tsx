@@ -3,8 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { CheckCircle2, MessageCircle } from "lucide-react";
+import { CheckCircle2, Clock, MessageCircle, XCircle } from "lucide-react";
 import { naira } from "@/lib/format";
+import { statusLabel } from "@/lib/orderStatus";
+import type { OrderStatus } from "@/lib/orderStatus";
 import { useSession } from "@/lib/session";
 import { curved, solid, soft } from "./buttonStyles";
 
@@ -17,6 +19,10 @@ type PublicOrder = {
   fulfilment: "delivery" | "pickup";
   address: string;
   notes: string;
+  status: OrderStatus;
+  paymentMethod: "online" | "on_delivery";
+  paymentStatus: "unpaid" | "paid" | "failed";
+  paidAt: string | null;
   notifications: {
     channel: "sms" | "whatsapp";
     to: "restaurant" | "customer";
@@ -44,6 +50,9 @@ export default function OrderView() {
   const status = useSession((state) => state.status);
   const user = useSession((state) => state.user);
   const [state, setState] = useState<State>({ kind: "loading" });
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [paying, setPaying] = useState(false);
+  const [payError, setPayError] = useState("");
 
   useEffect(() => {
     if (!id || status !== "ready" || !user) return;
@@ -66,7 +75,50 @@ export default function OrderView() {
     return () => {
       cancelled = true;
     };
-  }, [id, status, user]);
+  }, [id, status, user, refreshKey]);
+
+  // Keep the page up to date: quickly while a payment is unconfirmed,
+  // and slowly while the restaurant works on the order
+  const orderStatus = state.kind === "ready" ? state.order.status : null;
+  const awaitingPayment = orderStatus === "awaiting_payment";
+  const inProgress =
+    orderStatus !== null && orderStatus !== "completed" && orderStatus !== "cancelled";
+  useEffect(() => {
+    if (!inProgress) return;
+    let checks = 0;
+    const limit = awaitingPayment ? 10 : 240;
+    const timer = setInterval(() => {
+      checks += 1;
+      if (checks > limit) {
+        clearInterval(timer);
+        return;
+      }
+      setRefreshKey((key) => key + 1);
+    }, awaitingPayment ? 4000 : 15000);
+    return () => clearInterval(timer);
+  }, [inProgress, awaitingPayment]);
+
+  async function payNow(orderId: string) {
+    setPaying(true);
+    setPayError("");
+    try {
+      const response = await fetch("/api/payments/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.url) {
+        setPayError(data?.error ?? "We could not open the payment page. Please try again.");
+        return;
+      }
+      window.location.assign(data.url);
+    } catch {
+      setPayError("Could not reach the server. Check your connection and try again.");
+    } finally {
+      setPaying(false);
+    }
+  }
 
   if (!id) {
     return <p className="py-20 text-center text-stone-400">No order selected.</p>;
@@ -105,6 +157,8 @@ export default function OrderView() {
   }
 
   const { order } = state;
+  const unpaid = order.status === "awaiting_payment";
+  const cancelled = order.status === "cancelled";
   const find = (channel: "sms" | "whatsapp", to: "restaurant" | "customer") =>
     order.notifications.find((n) => n.channel === channel && n.to === to);
   const restaurantAlerted = ["sms", "whatsapp"].some(
@@ -114,22 +168,76 @@ export default function OrderView() {
   const whatsAppText = [
     `Hello Tan's Kitchen, I just placed order ${order.id}.`,
     order.items.map((i) => `${i.quantity} x ${i.name}`).join(", ") + ".",
-    `Total: ${naira.format(order.total)}.`,
+    `Total: ${naira.format(order.total)}${order.paymentStatus === "paid" ? " (paid online)" : ""}.`,
     order.fulfilment === "delivery" ? `Deliver to: ${order.address}.` : "Pickup.",
   ].join(" ");
 
   return (
     <div className="mx-auto max-w-2xl">
       <div className="flex items-center gap-3">
-        <CheckCircle2 className="h-9 w-9 text-orange-400" />
+        {unpaid ? (
+          <Clock className="h-9 w-9 text-orange-400" />
+        ) : cancelled ? (
+          <XCircle className="h-9 w-9 text-orange-400" />
+        ) : (
+          <CheckCircle2 className="h-9 w-9 text-orange-400" />
+        )}
         <h1 className="font-[family-name:var(--font-heading)] text-3xl font-bold">
-          Order placed
+          {unpaid
+            ? order.paymentStatus === "failed"
+              ? "Payment did not go through"
+              : "Complete your payment"
+            : cancelled
+              ? "Order cancelled"
+              : "Order placed"}
         </h1>
       </div>
+
       <p className="mt-3 text-stone-300">
-        Your order number is <span className="font-bold text-white">{order.id}</span>.
-        {restaurantAlerted && " Tan's Kitchen has been alerted and is on it."}
+        Your order number is <span className="font-bold text-white">{order.id}</span>.{" "}
+        {unpaid
+          ? "It is saved, but we have not received your payment yet. The restaurant is alerted as soon as the payment is confirmed."
+          : cancelled
+            ? "The restaurant cancelled this order. If you paid online, they will arrange your refund."
+            : restaurantAlerted && "Tan's Kitchen has been alerted and is on it."}
       </p>
+
+      {!unpaid && !cancelled && (
+        <p className="mt-2 text-sm text-stone-300">
+          Status:{" "}
+          <span className="font-bold text-orange-400">{statusLabel[order.status]}</span>
+        </p>
+      )}
+
+      {unpaid && (
+        <div className="mt-6">
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => payNow(order.id)}
+              disabled={paying}
+              className={`${curved} ${solid} px-7 py-2.5 text-xs font-extrabold uppercase tracking-wide disabled:opacity-60`}
+            >
+              {paying ? "Please wait..." : `Pay ${naira.format(order.total)} now`}
+            </button>
+            <button
+              type="button"
+              onClick={() => setRefreshKey((key) => key + 1)}
+              className={`${curved} ${soft} px-7 py-2.5 text-xs font-extrabold uppercase tracking-wide`}
+            >
+              Check again
+            </button>
+          </div>
+          {payError && (
+            <p role="alert" className="mt-3 text-sm text-orange-400">
+              {payError}
+            </p>
+          )}
+          <p className="mt-3 text-xs text-stone-500">
+            Already paid? This page checks for your payment on its own, so it may take a few seconds to update.
+          </p>
+        </div>
+      )}
 
       <div className="mt-8 rounded-[0.8rem] rounded-tr-[2rem] border border-white/10 bg-stone-900/60 p-6">
         <ul className="space-y-2 text-sm">
@@ -158,39 +266,49 @@ export default function OrderView() {
           {order.fulfilment === "delivery" ? `Delivery to: ${order.address}` : "Pickup"}
           {order.notes && <> &middot; Note: {order.notes}</>}
         </p>
-        <p className="mt-2 text-xs text-stone-500">You pay when your order arrives.</p>
-      </div>
-
-      <div className="mt-6 text-sm text-stone-400">
-        <p>
-          SMS confirmation to you:{" "}
-          <span className="text-stone-200">{statusText[find("sms", "customer")?.status ?? "skipped"]}</span>
-        </p>
-        <p className="mt-1">
-          WhatsApp confirmation to you:{" "}
-          <span className="text-stone-200">{statusText[find("whatsapp", "customer")?.status ?? "skipped"]}</span>
+        <p className="mt-2 text-xs text-stone-500">
+          {order.paymentStatus === "paid"
+            ? "Payment received. Thank you."
+            : order.paymentMethod === "online"
+              ? "Waiting for payment."
+              : "You pay when your order arrives."}
         </p>
       </div>
 
-      <div className="mt-8 flex flex-wrap gap-3">
-        {restaurantWhatsApp && (
-          <a
-            href={`https://wa.me/${restaurantWhatsApp}?text=${encodeURIComponent(whatsAppText)}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={`${curved} ${solid} inline-flex items-center gap-2 px-6 py-2.5 text-xs font-extrabold uppercase tracking-wide`}
-          >
-            <MessageCircle className="h-4 w-4" />
-            Message us on WhatsApp
-          </a>
-        )}
-        <Link
-          href="/menu"
-          className={`${curved} ${soft} inline-block px-6 py-2.5 text-xs font-extrabold uppercase tracking-wide`}
-        >
-          Back to the menu
-        </Link>
-      </div>
+      {!unpaid && !cancelled && (
+        <>
+          <div className="mt-6 text-sm text-stone-400">
+            <p>
+              SMS confirmation to you:{" "}
+              <span className="text-stone-200">{statusText[find("sms", "customer")?.status ?? "skipped"]}</span>
+            </p>
+            <p className="mt-1">
+              WhatsApp confirmation to you:{" "}
+              <span className="text-stone-200">{statusText[find("whatsapp", "customer")?.status ?? "skipped"]}</span>
+            </p>
+          </div>
+
+          <div className="mt-8 flex flex-wrap gap-3">
+            {restaurantWhatsApp && (
+              <a
+                href={`https://wa.me/${restaurantWhatsApp}?text=${encodeURIComponent(whatsAppText)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`${curved} ${solid} inline-flex items-center gap-2 px-6 py-2.5 text-xs font-extrabold uppercase tracking-wide`}
+              >
+                <MessageCircle className="h-4 w-4" />
+                Message us on WhatsApp
+              </a>
+            )}
+            <Link
+              href="/menu"
+              className={`${curved} ${soft} inline-block px-6 py-2.5 text-xs font-extrabold uppercase tracking-wide`}
+            >
+              Back to the menu
+            </Link>
+          </div>
+        </>
+      )}
     </div>
   );
 }
