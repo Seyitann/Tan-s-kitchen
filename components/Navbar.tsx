@@ -22,8 +22,9 @@ export default function Navbar() {
   const pathname = usePathname();
   // Ordering needs a login, so "Order online" goes to the login page first when nobody is logged in
   const user = useSession((state) => state.user);
-  const orderHref = user ? "/menu" : "/login?next=/menu";
-  // How far down the page you have scrolled, from 0 to 1
+  // Logged-in customers get a "My orders" button in its place
+  const ctaHref = user ? "/orders" : "/login?next=/menu";
+  const ctaLabel = user ? "My orders" : "Order online";  // How far down the page you have scrolled, from 0 to 1
   const { scrollYProgress } = useScroll();
   const progress = useSpring(scrollYProgress, { stiffness: 120, damping: 30 });
   const [open, setOpen] = useState(false);
@@ -75,11 +76,11 @@ export default function Navbar() {
 
         <div className="flex items-center gap-2">
           <Link
-            href={orderHref}
+            href={ctaHref}
             onClick={() => choose("/menu")}
             className={`${curvedSm} ${ghost} hidden px-5 py-1.5 text-xs font-extrabold uppercase tracking-wide lg:inline-block`}
           >
-            Order online
+            {ctaLabel}
           </Link>
 
           <CartButton />
@@ -113,11 +114,11 @@ export default function Navbar() {
           ))}
           <li>
             <Link
-              href={orderHref}
+              href={ctaHref}
               onClick={() => choose("/menu")}
               className={`${curved} ${ghost} block px-5 py-2.5 text-center text-sm font-extrabold uppercase tracking-wide`}
             >
-              Order online
+              {ctaLabel}    
             </Link>
           </li>
         </ul>

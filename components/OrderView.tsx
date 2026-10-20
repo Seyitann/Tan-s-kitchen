@@ -9,6 +9,7 @@ import { statusLabel } from "@/lib/orderStatus";
 import type { OrderStatus } from "@/lib/orderStatus";
 import { useSession } from "@/lib/session";
 import { curved, solid, soft } from "./buttonStyles";
+import StatusSteps from "./StatusSteps";
 
 type PublicOrder = {
   id: string;
@@ -202,11 +203,16 @@ export default function OrderView() {
             : restaurantAlerted && "Tan's Kitchen has been alerted and is on it."}
       </p>
 
-      {!unpaid && !cancelled && (
-        <p className="mt-2 text-sm text-stone-300">
-          Status:{" "}
-          <span className="font-bold text-orange-400">{statusLabel[order.status]}</span>
-        </p>
+            {!unpaid && !cancelled && (
+        <div className="mt-4">
+          <p className="text-sm text-stone-300">
+            Status:{" "}
+            <span className="font-bold text-orange-400">{statusLabel[order.status]}</span>
+          </p>
+          <div className="mt-4">
+            <StatusSteps status={order.status} fulfilment={order.fulfilment} />
+          </div>
+        </div>
       )}
 
       {unpaid && (
@@ -305,6 +311,12 @@ export default function OrderView() {
               className={`${curved} ${soft} inline-block px-6 py-2.5 text-xs font-extrabold uppercase tracking-wide`}
             >
               Back to the menu
+            </Link>
+            <Link
+              href="/orders"
+              className={`${curved} ${soft} inline-block px-6 py-2.5 text-xs font-extrabold uppercase tracking-wide`}
+            >
+              All my orders
             </Link>
           </div>
         </>
