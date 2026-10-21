@@ -1,6 +1,16 @@
+import { Suspense } from "react";
 import Image from "next/image";
+import { connection } from "next/server";
 import { Soup } from "lucide-react";
 import MenuGrid from "@/components/MenuGrid";
+import { getMenu } from "@/lib/menu";
+
+// The menu is read fresh for every visitor, so changes made by the owner show up straight away
+async function MenuContent() {
+  await connection();
+  const items = await getMenu();
+  return <MenuGrid items={items} />;
+}
 
 export default function MenuPage() {
   return (
@@ -21,7 +31,9 @@ export default function MenuPage() {
         </h1>
       </section>
 
-      <MenuGrid />
+      <Suspense fallback={<p className="py-20 text-center text-stone-400">Loading the menu...</p>}>
+        <MenuContent />
+      </Suspense>
     </main>
   );
 }

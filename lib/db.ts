@@ -12,6 +12,7 @@ import { randomUUID } from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { OrderStatus } from "./orderStatus";
+import type { MenuItem } from "./menuTypes";
 
 export type Customer = {
   id: string;
@@ -56,7 +57,13 @@ export type Order = {
   notifications: Notification[];
 };
 
-type Data = { customers: Customer[]; orders: Order[] };
+type Data = {
+  customers: Customer[];
+  orders: Order[];
+  menu: MenuItem[];
+  // Once true, the menu in the database is the real one and the starter menu is never copied again
+  menuSeeded: boolean;
+};
 
 // Both stores offer exactly these functions
 type Store = {
@@ -85,7 +92,19 @@ type Store = {
   // Moves an order to a new status, but only if it is still in the status the owner was
   // looking at. Returns false if someone else changed it first.
   updateOrderStatus(orderId: string, from: OrderStatus, to: OrderStatus): Promise<boolean>;
+  // The menu
+  listMenuItems(): Promise<MenuItem[]>;
+  getMenuItemsByIds(ids: string[]): Promise<MenuItem[]>;
+  upsertMenuItem(item: MenuItem): Promise<void>;
+  deleteMenuItem(id: string): Promise<void>;
+  // Copies the starter menu into storage the first time only
+  seedMenuIfNeeded(items: MenuItem[]): Promise<void>;
+  // Stores a (already shrunk) photo and returns the address it can be shown from
+  saveMenuImage(bytes: Buffer): Promise<string>;
 };
+
+const byMenuOrder = (a: MenuItem, b: MenuItem) =>
+  a.sortOrder - b.sortOrder || a.name.localeCompare(b.name);
 
 // ---------- Local file ----------
 
@@ -107,10 +126,15 @@ function withPaymentDefaults(order: Order): Order {
 
 async function read(): Promise<Data> {
   try {
-    const data = JSON.parse(await fs.readFile(FILE, "utf8")) as Data;
-    return { ...data, orders: data.orders.map(withPaymentDefaults) };
+    const data = JSON.parse(await fs.readFile(FILE, "utf8")) as Partial<Data>;
+    return {
+      customers: data.customers ?? [],
+      orders: (data.orders ?? []).map(withPaymentDefaults),
+      menu: data.menu ?? [],
+      menuSeeded: data.menuSeeded ?? false,
+    };
   } catch {
-    return { customers: [], orders: [] };
+    return { customers: [], orders: [], menu: [], menuSeeded: false };
   }
 }
 
@@ -234,6 +258,50 @@ const fileStore: Store = {
       return true;
     });
   },
+
+  async listMenuItems() {
+    const data = await read();
+    return [...data.menu].sort(byMenuOrder);
+  },
+
+  async getMenuItemsByIds(ids) {
+    const data = await read();
+    return data.menu.filter((item) => ids.includes(item.id));
+  },
+
+  upsertMenuItem(item) {
+    return update((data) => {
+      const index = data.menu.findIndex((m) => m.id === item.id);
+      if (index === -1) data.menu.push(item);
+      else data.menu[index] = item;
+    });
+  },
+
+  deleteMenuItem(id) {
+    return update((data) => {
+      data.menu = data.menu.filter((m) => m.id !== id);
+    });
+  },
+
+  seedMenuIfNeeded(items) {
+    return update((data) => {
+      if (data.menuSeeded) return;
+      for (const item of items) {
+        if (!data.menu.some((m) => m.id === item.id)) data.menu.push(item);
+      }
+      data.menuSeeded = true;
+    });
+  },
+
+  // While testing on your computer, photos go into public/uploads.
+  // The live site stores them in Supabase instead.
+  async saveMenuImage(bytes) {
+    const name = `${randomUUID()}.webp`;
+    const folder = path.join(process.cwd(), "public", "uploads");
+    await fs.mkdir(folder, { recursive: true });
+    await fs.writeFile(path.join(folder, name), bytes);
+    return `/uploads/${name}`;
+  },
 };
 
 // ---------- Supabase ----------
@@ -290,6 +358,49 @@ const toOrder = (row: OrderRow): Order => ({
   paymentStatus: row.payment_status,
   paymentReference: row.payment_reference,
   paidAt: row.paid_at,
+});
+
+type MenuRow = {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  category: string;
+  image: string;
+  ingredients: string[] | null;
+  tags: MenuItem["tags"] | null;
+  available: boolean;
+  featured: boolean;
+  sort_order: number;
+};
+
+const toMenuItem = (row: MenuRow): MenuItem => ({
+  id: row.id,
+  name: row.name,
+  description: row.description,
+  price: row.price,
+  category: row.category,
+  image: row.image,
+  ingredients: row.ingredients ?? [],
+  tags: row.tags ?? [],
+  available: row.available,
+  featured: row.featured,
+  sortOrder: row.sort_order,
+});
+
+const fromMenuItem = (item: MenuItem) => ({
+  id: item.id,
+  name: item.name,
+  description: item.description,
+  price: item.price,
+  category: item.category,
+  image: item.image,
+  ingredients: item.ingredients,
+  tags: item.tags,
+  available: item.available,
+  featured: item.featured,
+  sort_order: item.sortOrder,
+  updated_at: new Date().toISOString(),
 });
 
 function supabaseConfig() {
@@ -470,6 +581,66 @@ const supabaseStore: Store = {
     return (data ?? []).length > 0;
   },
 
+  async listMenuItems() {
+    const { data, error } = await supabase()
+      .from("menu_items")
+      .select("*")
+      .order("sort_order", { ascending: true })
+      .order("name", { ascending: true });
+    check(error);
+    return ((data ?? []) as MenuRow[]).map(toMenuItem);
+  },
+
+  async getMenuItemsByIds(ids) {
+    if (ids.length === 0) return [];
+    const { data, error } = await supabase().from("menu_items").select("*").in("id", ids);
+    check(error);
+    return ((data ?? []) as MenuRow[]).map(toMenuItem);
+  },
+
+  async upsertMenuItem(item) {
+    const { error } = await supabase()
+      .from("menu_items")
+      .upsert(fromMenuItem(item), { onConflict: "id" });
+    check(error);
+  },
+
+  async deleteMenuItem(id) {
+    const { error } = await supabase().from("menu_items").delete().eq("id", id);
+    check(error);
+  },
+
+  async seedMenuIfNeeded(items) {
+    const { data: flag, error } = await supabase()
+      .from("settings")
+      .select("key")
+      .eq("key", "menu_seeded")
+      .maybeSingle();
+    check(error);
+    if (flag) return;
+    // "Ignore duplicates" makes this safe if two visitors trigger it at the same moment
+    const { error: insertError } = await supabase()
+      .from("menu_items")
+      .upsert(items.map(fromMenuItem), { onConflict: "id", ignoreDuplicates: true });
+    check(insertError);
+    const { error: flagError } = await supabase()
+      .from("settings")
+      .upsert({ key: "menu_seeded", value: true }, { onConflict: "key" });
+    check(flagError);
+  },
+
+  async saveMenuImage(bytes) {
+    const name = `${randomUUID()}.webp`;
+    const bucket = supabase().storage.from("menu-images");
+    const { error } = await bucket.upload(name, bytes, {
+      contentType: "image/webp",
+      cacheControl: "31536000",
+      upsert: false,
+    });
+    if (error) throw new Error(`Storage error: ${error.message}`);
+    return bucket.getPublicUrl(name).data.publicUrl;
+  },
+
   async countOrdersSince(customerId, sinceIso) {
     const { count, error } = await supabase()
       .from("orders")
@@ -520,3 +691,11 @@ export const findCustomersByIds: Store["findCustomersByIds"] = (ids) =>
   store().findCustomersByIds(ids);
 export const updateOrderStatus: Store["updateOrderStatus"] = (orderId, from, to) =>
   store().updateOrderStatus(orderId, from, to);
+export const listMenuItems: Store["listMenuItems"] = () => store().listMenuItems();
+export const getMenuItemsByIds: Store["getMenuItemsByIds"] = (ids) =>
+  store().getMenuItemsByIds(ids);
+export const upsertMenuItem: Store["upsertMenuItem"] = (item) => store().upsertMenuItem(item);
+export const deleteMenuItem: Store["deleteMenuItem"] = (id) => store().deleteMenuItem(id);
+export const seedMenuIfNeeded: Store["seedMenuIfNeeded"] = (items) =>
+  store().seedMenuIfNeeded(items);
+export const saveMenuImage: Store["saveMenuImage"] = (bytes) => store().saveMenuImage(bytes);

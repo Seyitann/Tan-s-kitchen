@@ -7,6 +7,7 @@ import { naira } from "@/lib/format";
 import { canCancel, nextStatus, statusLabel } from "@/lib/orderStatus";
 import type { OrderStatus } from "@/lib/orderStatus";
 import { displayPhone } from "@/lib/phone";
+import AdminNav from "./AdminNav";
 import { charcoal, curved, curvedSm, dark, solid } from "./buttonStyles";
 
 type AdminOrder = {
@@ -428,6 +429,7 @@ export default function AdminView() {
 
   return (
     <div>
+      <AdminNav />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="font-[family-name:var(--font-heading)] text-3xl font-bold">Orders</h1>
         <div className="flex items-center gap-2">

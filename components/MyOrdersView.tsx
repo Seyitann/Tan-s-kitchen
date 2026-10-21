@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { menu } from "@/data/menu";
 import { useCart } from "@/lib/cart";
+import type { MenuItem } from "@/lib/menuTypes";
 import { naira } from "@/lib/format";
 import { statusLabel } from "@/lib/orderStatus";
 import type { OrderStatus } from "@/lib/orderStatus";
@@ -117,12 +117,21 @@ export default function MyOrdersView() {
     return () => clearInterval(timer);
   }, [anyInProgress]);
 
-  // Puts the same dishes back in the cart, at today's prices
-  function orderAgain(order: MyOrder) {
+  // Puts the same dishes back in the cart, at today's prices and only if they are available
+  async function orderAgain(order: MyOrder) {
+    let dishes: MenuItem[];
+    try {
+      const response = await fetch("/api/menu", { cache: "no-store" });
+      dishes = (await response.json()).items;
+    } catch {
+      setNotice("Could not reach the menu. Please try again.");
+      return;
+    }
+
     let skipped = 0;
     for (const line of order.items) {
-      const dish = menu.find((d) => d.id === line.id);
-      if (!dish) {
+      const dish = dishes.find((d) => d.id === line.id);
+      if (!dish || !dish.available) {
         skipped += 1;
         continue;
       }
@@ -130,7 +139,7 @@ export default function MyOrdersView() {
     }
     setNotice(
       skipped > 0
-        ? "Some dishes from that order are no longer on the menu, so they were left out."
+        ? "Some dishes from that order are sold out or no longer on the menu, so they were left out."
         : ""
     );
     openCart();

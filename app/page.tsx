@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Hero from "@/components/Hero";
 import Marquee from "@/components/Marquee";
 import About from "@/components/About";
@@ -12,7 +13,9 @@ export default function Home() {
       <Hero />
       <Marquee />
       <About />
-      <TopPicks />
+      <Suspense fallback={<section id="top-picks" className="h-96 bg-stone-900/60" />}>
+        <TopPicks />
+      </Suspense>
       <Experience />
       <Testimonials />
       <Contact />

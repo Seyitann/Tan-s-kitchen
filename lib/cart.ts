@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { MenuItem } from "@/data/menu";
+import type { MenuItem } from "./menuTypes";
 
 export type CartLine = {
   id: string;
@@ -15,6 +15,8 @@ type CartState = {
   isOpen: boolean;
   hydrated: boolean;
   add: (item: MenuItem) => void;
+  // Swaps the whole cart, used to refresh prices and remove dishes that sold out
+  replaceLines: (lines: CartLine[]) => void;
   increase: (id: string) => void;
   decrease: (id: string) => void;
   remove: (id: string) => void;
@@ -79,6 +81,7 @@ export const useCart = create<CartState>()(
       remove: (id) =>
         set((state) => ({ lines: state.lines.filter((line) => line.id !== id) })),
 
+      replaceLines: (lines) => set({ lines }),
       clear: () => set({ lines: [] }),
       open: () => set({ isOpen: true }),
       close: () => set({ isOpen: false }),

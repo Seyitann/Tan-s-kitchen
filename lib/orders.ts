@@ -1,5 +1,5 @@
 import { randomInt } from "crypto";
-import { menu } from "@/data/menu";
+import type { MenuItem } from "./menuTypes";
 import { DELIVERY_FEE, MAX_QUANTITY_PER_ITEM } from "./config";
 import type { Order } from "./db";
 
@@ -77,13 +77,17 @@ function newOrderId() {
 // Works out the prices from the menu on the server, never from the browser
 export function buildOrder(
   request: Extract<Parsed, { ok: true }>["value"],
-  customerId: string
+  customerId: string,
+  dishes: MenuItem[]
 ): { ok: true; order: Order } | { ok: false; error: string } {
   const items = [];
   for (const line of request.items) {
-    const dish = menu.find((item) => item.id === line.id);
+    const dish = dishes.find((item) => item.id === line.id);
     if (!dish) {
       return { ok: false, error: "A dish in your cart is no longer on the menu. Please refresh and try again." };
+    }
+    if (!dish.available) {
+      return { ok: false, error: `${dish.name} is sold out right now. Please remove it from your cart.` };
     }
     items.push({
       id: dish.id,

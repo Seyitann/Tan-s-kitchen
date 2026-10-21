@@ -5,6 +5,8 @@ import type { FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { selectTotal, useCart } from "@/lib/cart";
+import type { CartLine } from "@/lib/cart";
+import type { MenuItem } from "@/lib/menuTypes";
 import { DELIVERY_FEE } from "@/lib/config";
 import { naira } from "@/lib/format";
 import { displayPhone } from "@/lib/phone";
@@ -31,6 +33,7 @@ export default function CheckoutView() {
   const subtotal = useCart(selectTotal);
   const clear = useCart((state) => state.clear);
   const openCart = useCart((state) => state.open);
+  const replaceLines = useCart((state) => state.replaceLines);
 
   const [fulfilment, setFulfilment] = useState<"delivery" | "pickup">("delivery");
   const [address, setAddress] = useState("");
@@ -40,11 +43,47 @@ export default function CheckoutView() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
+  const [menuChecked, setMenuChecked] = useState(false);
+  const [menuNotice, setMenuNotice] = useState("");
 
   // Ordering needs a login
   useEffect(() => {
     if (status === "ready" && !user) router.replace("/login?next=/checkout");
   }, [status, user, router]);
+
+  // Before showing the totals, compare the cart with the live menu: take out dishes that
+  // sold out and bring prices up to date, so the total shown is the total charged
+  useEffect(() => {
+    if (!hydrated || menuChecked) return;
+    let cancelled = false;
+    fetch("/api/menu", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((data: { items: MenuItem[] }) => {
+        if (cancelled) return;
+        const changes: string[] = [];
+        const kept: CartLine[] = [];
+        for (const line of useCart.getState().lines) {
+          const dish = data.items.find((d) => d.id === line.id);
+          if (!dish || !dish.available) {
+            changes.push(`${line.name} is no longer available and was taken out.`);
+            continue;
+          }
+          if (dish.price !== line.price) {
+            changes.push(`The price of ${dish.name} is now ${naira.format(dish.price)}.`);
+          }
+          kept.push({ ...line, name: dish.name, price: dish.price, image: dish.image });
+        }
+        if (changes.length > 0) replaceLines(kept);
+        setMenuNotice(changes.join(" "));
+        setMenuChecked(true);
+      })
+      .catch(() => {
+        if (!cancelled) setMenuChecked(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrated, menuChecked, replaceLines]);
 
   // Which ways of paying are switched on
   useEffect(() => {
@@ -128,13 +167,14 @@ export default function CheckoutView() {
     return <p className="py-20 text-center text-stone-300">Taking you to the next step...</p>;
   }
 
-  if (status !== "ready" || !hydrated || !user || !options) {
+  if (status !== "ready" || !hydrated || !user || !options || !menuChecked) {
     return <p className="py-20 text-center text-stone-400">Loading your order...</p>;
   }
 
   if (lines.length === 0) {
     return (
       <div className="py-20 text-center">
+        {menuNotice && <p className="mb-3 text-sm text-orange-400">{menuNotice}</p>}
         <p className="text-stone-300">Your cart is empty.</p>
         <Link
           href="/menu"
@@ -156,6 +196,11 @@ export default function CheckoutView() {
 
   return (
     <form onSubmit={handleSubmit} className="grid gap-10 md:grid-cols-[1.2fr_1fr]">
+      {menuNotice && (
+        <p role="status" className="text-sm text-orange-400 md:col-span-2">
+          {menuNotice}
+        </p>
+      )}
       <div className="space-y-6">
         <div>
           <h2 className="text-sm font-extrabold uppercase tracking-wide text-stone-400">

@@ -2,22 +2,26 @@
 
 import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { menu } from "@/data/menu";
-import type { MenuItem } from "@/data/menu";
+import type { MenuItem } from "@/lib/menuTypes";
 import DishCard from "./DishCard";
-import { curved, soft, solid } from "./buttonStyles";
+import { charcoal, curved, solid } from "./buttonStyles";
 
-type Filter = "All" | MenuItem["category"];
+export default function MenuGrid({ items: menu }: { items: MenuItem[] }) {
+  // The filter buttons come from the categories on the menu, in the order they first appear.
+  // The owner adds a dish with a new category and its button appears.
+  const categories = Array.from(new Set(menu.map((item) => item.category)));
+  const filters = ["All", ...categories];
 
-// The filter buttons come from the categories used in data/menu.ts,
-// in the order they first appear there. Add a dish with a new category and its button appears.
-const categories = Array.from(new Set(menu.map((item) => item.category)));
-const filters: Filter[] = ["All", ...categories];
+  const [active, setActive] = useState("All");
+  const items = active === "All" ? menu : menu.filter((item) => item.category === active);
 
-export default function MenuGrid() {
-  const [active, setActive] = useState<Filter>("All");
-  const items: MenuItem[] =
-    active === "All" ? menu : menu.filter((item) => item.category === active);
+  if (menu.length === 0) {
+    return (
+      <p className="py-20 text-center text-stone-400">
+        The menu is being updated. Please check back soon.
+      </p>
+    );
+  }
 
   return (
     <section className="mx-auto max-w-5xl px-4 py-10">
@@ -28,8 +32,8 @@ export default function MenuGrid() {
             type="button"
             onClick={() => setActive(filter)}
             whileTap={{ scale: 0.95 }}
-            className={`${curved} px-7 py-2.5 text-xs font-bold uppercase tracking-wide ${
-              filter === active ? solid : soft
+            className={`${curved} px-7 py-2.5 text-xs font-extrabold uppercase tracking-wide ${
+              filter === active ? solid : charcoal
             }`}
           >
             {filter}

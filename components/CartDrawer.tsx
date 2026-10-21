@@ -103,13 +103,17 @@ export default function CartDrawer() {
                     className="flex gap-4"
                   >
                     <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-[0.5rem] rounded-tr-[1.2rem]">
-                      <Image
-                        src={line.image}
-                        alt={line.name}
-                        fill
-                        sizes="80px"
-                        className="object-cover"
-                      />
+                      {line.image ? (
+                        <Image
+                          src={line.image}
+                          alt={line.name}
+                          fill
+                          sizes="80px"
+                          className="object-cover"
+                        />
+                      ) : (
+                        <div className="h-full w-full bg-stone-800" />
+                      )}
                     </div>
                     <div className="flex flex-1 flex-col justify-between">
                       <div className="flex items-start justify-between gap-2">

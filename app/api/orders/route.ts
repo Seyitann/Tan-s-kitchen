@@ -3,6 +3,7 @@ import { countOrdersSince, createOrder, getOrder, listOrdersForCustomer, saveNot
 import { settlePayment } from "@/lib/payments";
 import { paystackConfigured } from "@/lib/paystack";
 import { json, readJson } from "@/lib/http";
+import { getDishes } from "@/lib/menu";
 import { notifyOrder } from "@/lib/notify";
 import { buildOrder, parseOrderRequest, publicOrder } from "@/lib/orders";
 
@@ -31,7 +32,9 @@ export async function POST(request: Request) {
     return json({ error: "Please pay online to place an order." }, 400);
   }
 
-  const built = buildOrder(parsed.value, customer.id);
+  // Prices and availability come from the live menu, never from the browser
+  const dishes = await getDishes(parsed.value.items.map((line) => line.id));
+  const built = buildOrder(parsed.value, customer.id, dishes);
   if (!built.ok) return json({ error: built.error }, 400);
 
   const order = built.order;

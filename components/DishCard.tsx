@@ -5,11 +5,11 @@ import { useState } from "react";
 import type { MouseEvent } from "react";
 import { Check } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
-import type { MenuItem } from "@/data/menu";
+import type { MenuItem } from "@/lib/menuTypes";
 import { useCart } from "@/lib/cart";
 import { flyToCart } from "@/lib/flyToCart";
 import { naira } from "@/lib/format";
-import { curved, solid } from "./buttonStyles";
+import { charcoal, curved, solid } from "./buttonStyles";
 
 // Each variant has a resting look and a hover look.
 // The card passes "hover" down to the parts inside it, so one hover moves everything.
@@ -26,7 +26,7 @@ export default function DishCard({ item }: { item: MenuItem }) {
   function handleAdd(e: MouseEvent<HTMLButtonElement>) {
     addToCart(item);
     // A small copy of the photo flies up to the cart icon
-    if (!reduceMotion) {
+    if (!reduceMotion && item.image) {
       flyToCart(item.image, e.currentTarget.getBoundingClientRect());
     }
     // The button says "Added" for a moment
@@ -49,19 +49,30 @@ export default function DishCard({ item }: { item: MenuItem }) {
           transition={{ duration: 0.6, ease: "easeOut" }}
           className="absolute inset-0"
         >
-          <Image
-            src={item.image}
-            alt={item.name}
-            fill
-            sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
-            className="object-cover"
-          />
+          {item.image ? (
+            <Image
+              src={item.image}
+              alt={item.name}
+              fill
+              sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+              className="object-cover"
+            />
+          ) : (
+            <div className="grid h-full w-full place-items-center bg-stone-800 text-xs uppercase tracking-widest text-stone-500">
+              Photo coming soon
+            </div>
+          )}
         </motion.div>
         <motion.div
           variants={shade}
           transition={{ duration: 0.3 }}
           className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"
         />
+        {!item.available && (
+          <span className="absolute left-3 top-3 rounded-full bg-stone-950/85 px-3 py-1 text-[11px] font-extrabold uppercase tracking-wide text-orange-300">
+            Sold out
+          </span>
+        )}
       </div>
 
       <h3 className="mt-3 text-2xl font-light transition-colors duration-300 group-hover:text-orange-400">
@@ -96,11 +107,16 @@ export default function DishCard({ item }: { item: MenuItem }) {
       <motion.button
         type="button"
         onClick={handleAdd}
-        whileHover={reduceMotion ? undefined : { scale: 1.06 }}
-        whileTap={{ scale: 0.94 }}
-        className={`${curved} ${solid} mt-3 min-w-[9rem] px-7 py-2.5 text-[11px] font-extrabold uppercase tracking-wide`}
+        disabled={!item.available}
+        whileHover={reduceMotion || !item.available ? undefined : { scale: 1.06 }}
+        whileTap={item.available ? { scale: 0.94 } : undefined}
+        className={`${curved} ${item.available ? solid : charcoal} mt-3 min-w-[9rem] px-7 py-2.5 text-[11px] font-extrabold uppercase tracking-wide ${
+          item.available ? "" : "cursor-not-allowed opacity-60"
+        }`}
       >
-        {added ? (
+        {!item.available ? (
+          "Sold out"
+        ) : added ? (
           <span className="inline-flex items-center gap-1">
             <Check className="h-3.5 w-3.5" />
             Added
